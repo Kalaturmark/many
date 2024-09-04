@@ -1,0 +1,146 @@
+﻿@page
+@using Microsoft.EntityFrameworkCore
+@using System.Collections.Generic
+@using System.Linq
+
+@functions {
+    public class Student
+    {
+        public int StudentId { get; set; }
+        public string Name { get; set; }
+        public ICollection<StudentCourse> StudentCourses { get; set; }
+    }
+
+    public class Course
+    {
+        public int CourseId { get; set; }
+        public string Title { get; set; }
+        public ICollection<StudentCourse> StudentCourses { get; set; }
+    }
+
+    public class StudentCourse
+    {
+        public int StudentId { get; set; }
+        public Student Student { get; set; }
+
+        public int CourseId { get; set; }
+        public Course Course { get; set; }
+    }
+
+
+    public class ApplicationDbContext : DbContext
+    {
+        public DbSet<Student> Students { get; set; }
+        public DbSet<Course> Courses { get; set; }
+        public DbSet<StudentCourse> StudentCourses { get; set; }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<StudentCourse>()
+                .HasKey(sc => new { sc.StudentId, sc.CourseId });
+
+            modelBuilder.Entity<StudentCourse>()
+                .HasOne(sc => sc.Student)
+                .WithMany(s => s.StudentCourses)
+                .HasForeignKey(sc => sc.StudentId);
+
+            modelBuilder.Entity<StudentCourse>()
+                .HasOne(sc => sc.Course)
+                .WithMany(c => c.StudentCourses)
+                .HasForeignKey(sc => sc.CourseId);
+        }
+    }
+    
+    private readonly ApplicationDbContext _context;
+
+    public List<Student> Students { get; set; }
+
+    public void OnGet()
+    {
+        Students = _context.Students.Include(s => s.StudentCourses)
+                                    .ThenInclude(sc => sc.Course)
+                                    .ToList();
+    }
+
+    public IActionResult OnPostAddCourse(int studentId, int courseId)
+    {
+        var student = _context.Students.Find(studentId);
+        var course = _context.Courses.Find(courseId);
+        if (student != null && course != null)
+        {
+            _context.StudentCourses.Add(new StudentCourse { StudentId = studentId, CourseId = courseId });
+            _context.SaveChanges();
+        }
+        return new JsonResult(new { success = true });
+    }
+
+    public IActionResult OnPostRemoveCourse(int studentId, int courseId)
+    {
+        var studentCourse = _context.StudentCourses.SingleOrDefault(sc => sc.StudentId == studentId && sc.CourseId == courseId);
+        if (studentCourse != null)
+        {
+            _context.StudentCourses.Remove(studentCourse);
+            _context.SaveChanges();
+        }
+        return new JsonResult(new { success = true });
+    }
+}
+
+@{
+    ViewData["Title"] = "Many-to-Many Example";
+    OnGet(); 
+}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Many-to-Many Example</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <h2>Students</h2>
+    <ul id="studentsList">
+        @foreach (var student in Students)
+        {
+            <li>@student.Name
+                <button onclick="addCourse(@student.StudentId)">Add Course</button>
+                <ul>
+                    @foreach (var course in student.StudentCourses.Select(sc => sc.Course))
+                    {
+                        <li>@course.Title 
+                            <button onclick="removeCourse(@student.StudentId, @course.CourseId)">Remove</button>
+                        </li>
+                    }
+                </ul>
+            </li>
+        }
+    </ul>
+
+    <script>
+        function addCourse(studentId) {
+            var courseId = prompt("Enter Course ID to add:");
+            if (courseId) {
+                $.ajax({
+                    url: '@Url.Page("Index", "AddCourse")',
+                    type: 'POST',
+                    data: { studentId: studentId, courseId: courseId },
+                    success: function (result) {
+                        location.reload();
+                    }
+                });
+            }
+        }
+
+        function removeCourse(studentId, courseId) {
+            $.ajax({
+                url: '@Url.Page("Index", "RemoveCourse")',
+                type: 'POST',
+                data: { studentId: studentId, courseId: courseId },
+                success: function (result) {
+                    location.reload();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
